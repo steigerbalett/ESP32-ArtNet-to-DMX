@@ -8,6 +8,8 @@ This is a brief introduction to my project published on [ElettronicaIN #276](htt
 
 It is based on the sketch [DMX_write](https://github.com/someweisguy/esp_dmx) by Mitch Weisbord and on the sketch [ArtNetWifiNeoPixel](https://github.com/rstephan/ArtnetWifi) by rstephan.
 
+## ⚠️ IMPORTANT — Compilation Issues
+ If you experience compilation errors, they are caused by the esp_dmx library; the project should build correctly with esp_dmx library version 3.0.2-beta.
 ------
 
 # Hardware
