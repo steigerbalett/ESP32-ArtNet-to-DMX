@@ -32,10 +32,6 @@
   or send "reset-wifi\n" via Serial. The device will reboot into
   the Captive Portal again.
 
-  Compatible with:
-    - esp_dmx  4.1.0
-    - ESP32 Arduino Core 3.x (IDF 5.x)
-  ─────────────────────────────────────────────────────────────────
 */
 
 #include <Arduino.h>
@@ -98,7 +94,6 @@ struct RdmDevice {
   uint16_t  dmxAddress;
   uint8_t   footprint;
   uint16_t  subDeviceCount;
-  char      label[33];
   char      swVersion[33];
   bool      active;
 };
@@ -129,18 +124,13 @@ bool rdmInitDone = false;
 
 char dynamicName[32] = "ESP-ArtNet-XXXXXX";
 
-// Button debounce
-unsigned long btnPressStart = 0;
-bool btnWasPressed = false;
-
 // ═══════════════════════════════════════════════════════════════
 //  NVS HELPERS
 // ═══════════════════════════════════════════════════════════════
 
-// Returns the stored WiFi mode; MODE_CAPTIVE means "not configured yet"
 uint8_t loadWifiMode() {
   prefs.begin("wificonf", true);
-  uint8_t m = prefs.getUChar("mode", 255);  // 255 = factory default
+  uint8_t m = prefs.getUChar("mode", 255);
   prefs.end();
   return m;
 }
@@ -180,15 +170,11 @@ void clearWifiConfig() {
 
 // ═══════════════════════════════════════════════════════════════
 //  CAPTIVE PORTAL
-//  Opens an open (no-password) AP and serves a config page.
-//  The user selects STA or AP mode and optionally enters WiFi
-//  credentials. On submit the choice is saved and the device reboots.
 // ═══════════════════════════════════════════════════════════════
 
 WebServer portalServer(80);
 DNSServer dnsServer;
 
-// Minimal inline HTML for the config page
 static const char PORTAL_HTML[] PROGMEM = R"rawhtml(
 <!DOCTYPE html>
 <html lang="en">
@@ -208,12 +194,9 @@ static const char PORTAL_HTML[] PROGMEM = R"rawhtml(
   input,select{width:100%;padding:10px 12px;background:#2a2a2a;border:1px solid #444;
                border-radius:8px;color:#eee;font-size:1rem}
   input:focus,select:focus{outline:none;border-color:#4f98a3}
-  .sta-fields{transition:opacity .2s}
   button{margin-top:24px;width:100%;padding:12px;background:#01696f;color:#fff;
          border:none;border-radius:8px;font-size:1rem;cursor:pointer}
   button:hover{background:#0c4e54}
-  .badge{display:inline-block;padding:2px 8px;border-radius:99px;font-size:.75rem;
-         background:#2a2a2a;border:1px solid #444;color:#888;margin-left:8px}
 </style>
 </head>
 <body>
@@ -226,19 +209,17 @@ static const char PORTAL_HTML[] PROGMEM = R"rawhtml(
       <option value="sta">Station (STA) &ndash; connect to existing network</option>
       <option value="ap">Access Point (AP) &ndash; standalone, no router needed</option>
     </select>
-
-    <div class="sta-fields" id="staFields">
+    <div id="staFields">
       <label>Network SSID</label>
       <input type="text" name="ssid" id="ssid" autocomplete="off" placeholder="My WiFi Network">
       <label>Password</label>
-      <input type="password" name="pw" autocomplete="off" placeholder="(leave blank if open)">
+      <input type="password" name="pw" autocomplete="off" placeholder="(leave blank if open network)">
     </div>
-
     <button type="submit">Save &amp; Restart</button>
   </form>
 </div>
 <script>
-  document.getElementById('dn').textContent = '%DEVNAME%';
+  document.getElementById('dn').textContent='%DEVNAME%';
   function toggleSta(){
     var s=document.getElementById('modeSelect').value==='sta';
     document.getElementById('staFields').style.opacity=s?'1':'.35';
@@ -258,7 +239,7 @@ static const char SAVED_HTML[] PROGMEM = R"rawhtml(
 <style>body{font-family:system-ui,sans-serif;background:#111;color:#eee;
 display:flex;justify-content:center;align-items:center;min-height:100vh;text-align:center}
 h1{font-size:1.4rem;margin-bottom:8px}p{color:#888}</style></head>
-<body><div><h1>&#10003; Settings saved</h1><p>The device is restarting…</p></div></body>
+<body><div><h1>&#10003; Settings saved</h1><p>The device is restarting&#8230;</p></div></body>
 </html>
 )rawhtml";
 
@@ -276,7 +257,6 @@ void handlePortalSave() {
   if (mode == "ap") {
     saveWifiMode(MODE_AP);
   } else {
-    // Default to STA
     saveStaCredentials(ssid, pw);
     saveWifiMode(MODE_STA);
   }
@@ -286,7 +266,6 @@ void handlePortalSave() {
   ESP.restart();
 }
 
-// Redirect all unknown requests to the portal root (captive portal trick)
 void handlePortalNotFound() {
   portalServer.sendHeader("Location", "http://192.168.4.1/", true);
   portalServer.send(302, "text/plain", "");
@@ -297,23 +276,21 @@ void runCaptivePortal() {
 
   WiFi.mode(WIFI_AP);
   WiFi.softAPConfig(AP_IP, AP_IP, AP_SUBNET);
-  // No password → open network
-  WiFi.softAP(dynamicName);
+  WiFi.softAP(dynamicName);  // no password = open network
 
   Serial.println("[Captive] AP IP: " + WiFi.softAPIP().toString());
 
-  // DNS: redirect every hostname to our IP
   dnsServer.setErrorReplyCode(DNSReplyCode::NoError);
   dnsServer.start(53, "*", AP_IP);
 
-  portalServer.on("/",       HTTP_GET,  handlePortalRoot);
-  portalServer.on("/save",   HTTP_POST, handlePortalSave);
+  portalServer.on("/",      HTTP_GET,  handlePortalRoot);
+  portalServer.on("/save",  HTTP_POST, handlePortalSave);
   portalServer.onNotFound(handlePortalNotFound);
   portalServer.begin();
 
   Serial.println("[Captive] Portal ready – connect to AP and open http://192.168.4.1");
 
-  // Block here until the user submits the form (handlePortalSave → ESP.restart())
+  // Block until the user saves (handlePortalSave calls ESP.restart())
   while (true) {
     dnsServer.processNextRequest();
     portalServer.handleClient();
@@ -325,7 +302,7 @@ void runCaptivePortal() {
 // ═══════════════════════════════════════════════════════════════
 
 bool connectWiFi(const String& ssid, const String& pw, unsigned long timeoutMs = 15000) {
-  Serial.print("[WiFi] Connecting to "" + ssid + """);
+  Serial.print("[WiFi] Connecting to \"" + ssid + "\"");
   WiFi.mode(WIFI_STA);
   WiFi.setHostname(dynamicName);
   if (pw.length() > 0) {
@@ -356,7 +333,7 @@ void setupOTA() {
     String type = (ArduinoOTA.getCommand() == U_FLASH) ? "Sketch" : "Filesystem";
     Serial.println("OTA start: " + type);
   });
-  ArduinoOTA.onEnd([]() { Serial.println("\nOTA complete."); });
+  ArduinoOTA.onEnd([]()  { Serial.println("\nOTA complete."); });
   ArduinoOTA.onProgress([](unsigned int p, unsigned int t) {
     Serial.printf("OTA: %u%%\r", p / (t / 100));
   });
@@ -368,10 +345,17 @@ void setupOTA() {
 
 // ═══════════════════════════════════════════════════════════════
 //  RDM HELPERS
+//  esp_dmx 4.1.0: rdm_send_get_* returns size_t (bytes received).
+//  A return value > 0 indicates success.
+//  Available PIDs in controller.h:
+//    product_info.h  : rdm_send_get_device_info, rdm_send_get_software_version_label
+//    device_control.h: rdm_send_get_identify_device, rdm_send_set_identify_device
+//    dmx_setup.h     : rdm_send_get_dmx_start_address, rdm_send_set_dmx_start_address
+//  NOTE: rdm_send_get_device_label is NOT present in 4.1.0.
 // ═══════════════════════════════════════════════════════════════
 
-const char* nackReasonStr(uint16_t reason) {
-  switch (reason) {
+const char* nackReasonStr(rdm_nr_t reason) {
+  switch ((uint16_t)reason) {
     case 0x0000: return "UNKNOWN_PID";
     case 0x0001: return "FORMAT_ERROR";
     case 0x0002: return "HARDWARE_FAULT";
@@ -389,56 +373,68 @@ const char* nackReasonStr(uint16_t reason) {
 
 void printAckStatus(const rdm_ack_t& ack, const char* pidName) {
   if (ack.type == RDM_RESPONSE_TYPE_NACK_REASON) {
-    Serial.printf("    [NACK] %s → Reason: %s (0x%04X)\n",
-                  pidName, nackReasonStr(ack.nack_reason), ack.nack_reason);
+    Serial.printf("    [NACK] %s → %s (0x%04X)\n",
+                  pidName, nackReasonStr(ack.nack_reason), (uint16_t)ack.nack_reason);
   } else if (ack.type == RDM_RESPONSE_TYPE_ACK_TIMER) {
-    Serial.printf("    [ACK_TIMER] %s → Wait: %d ms\n", pidName, ack.timer);
+    Serial.printf("    [ACK_TIMER] %s → wait %u ticks\n", pidName, (unsigned)ack.timer);
   }
 }
 
-void rdmQueryDevice(dmx_port_t port, rdm_uid_t* uid, RdmDevice& dev) {
+void rdmQueryDevice(dmx_port_t port, const rdm_uid_t* uid, RdmDevice& dev) {
   rdm_sub_device_t sub = RDM_SUB_DEVICE_ROOT;
   rdm_ack_t ack;
 
+  // ── DeviceInfo ──────────────────────────────────────────────
   rdm_device_info_t info;
   memset(&info, 0, sizeof(info));
-  if (rdm_send_get_device_info(port, uid, sub, &info, &ack)) {
+  if (rdm_send_get_device_info(port, uid, sub, &info, &ack) > 0) {
     dev.footprint      = info.footprint;
     dev.subDeviceCount = info.sub_device_count;
     Serial.printf("    Footprint: %d ch | Sub-devices: %d\n",
                   dev.footprint, dev.subDeviceCount);
-  } else { printAckStatus(ack, "GET_DEVICE_INFO"); }
+  } else {
+    printAckStatus(ack, "GET_DEVICE_INFO");
+  }
 
-  if (rdm_send_get_dmx_start_address(port, uid, sub, &dev.dmxAddress, &ack)) {
+  // ── DMX start address ───────────────────────────────────────
+  if (rdm_send_get_dmx_start_address(port, uid, sub, &dev.dmxAddress, &ack) > 0) {
     Serial.printf("    DMX start: %d\n", dev.dmxAddress);
-  } else { printAckStatus(ack, "GET_DMX_START_ADDRESS"); dev.dmxAddress = 0; }
+  } else {
+    printAckStatus(ack, "GET_DMX_START_ADDRESS");
+    dev.dmxAddress = 0;
+  }
 
-  memset(dev.label, 0, sizeof(dev.label));
-  if (rdm_send_get_device_label(port, uid, sub, dev.label, sizeof(dev.label) - 1, &ack)) {
-    Serial.printf("    Label: \"%s\"\n", dev.label);
-  } else { printAckStatus(ack, "GET_DEVICE_LABEL"); strncpy(dev.label, "(unknown)", sizeof(dev.label) - 1); }
-
+  // ── Software version label ──────────────────────────────────
   memset(dev.swVersion, 0, sizeof(dev.swVersion));
-  if (rdm_send_get_software_version_label(port, uid, sub, dev.swVersion, sizeof(dev.swVersion) - 1, &ack)) {
+  if (rdm_send_get_software_version_label(port, uid, sub,
+                                          dev.swVersion,
+                                          sizeof(dev.swVersion) - 1, &ack) > 0) {
     Serial.printf("    SW: \"%s\"\n", dev.swVersion);
-  } else { printAckStatus(ack, "GET_SW_VERSION"); strncpy(dev.swVersion, "(unknown)", sizeof(dev.swVersion) - 1); }
+  } else {
+    printAckStatus(ack, "GET_SOFTWARE_VERSION_LABEL");
+    strncpy(dev.swVersion, "(unknown)", sizeof(dev.swVersion) - 1);
+  }
 
+  // ── Identify status ──────────────────────────────────────────
   bool identifying = false;
-  if (rdm_send_get_identify_device(port, uid, sub, &identifying, &ack)) {
+  if (rdm_send_get_identify_device(port, uid, sub, &identifying, &ack) > 0) {
     Serial.printf("    Identify: %s\n", identifying ? "YES" : "No");
-  } else { printAckStatus(ack, "GET_IDENTIFY_DEVICE"); }
+  } else {
+    printAckStatus(ack, "GET_IDENTIFY_DEVICE");
+  }
 }
 
-bool rdmSetDmxAddress(dmx_port_t port, rdm_uid_t* uid, uint16_t address) {
+bool rdmSetDmxAddress(dmx_port_t port, const rdm_uid_t* uid, uint16_t address) {
   rdm_ack_t ack;
   bool ok = rdm_send_set_dmx_start_address(port, uid, RDM_SUB_DEVICE_ROOT, address, &ack);
   if (!ok) printAckStatus(ack, "SET_DMX_START_ADDRESS");
   return ok;
 }
 
-bool rdmSetIdentify(dmx_port_t port, rdm_uid_t* uid, bool enable) {
+bool rdmSetIdentify(dmx_port_t port, const rdm_uid_t* uid, bool enable) {
   rdm_ack_t ack;
-  bool ok = rdm_send_set_identify_device(port, uid, RDM_SUB_DEVICE_ROOT, enable, &ack);
+  bool ok = rdm_send_set_identify_device(port, uid, RDM_SUB_DEVICE_ROOT,
+                                         (uint8_t)enable, &ack);
   if (!ok) printAckStatus(ack, "SET_IDENTIFY_DEVICE");
   return ok;
 }
@@ -446,8 +442,9 @@ bool rdmSetIdentify(dmx_port_t port, rdm_uid_t* uid, bool enable) {
 void rdmDiscoverPort(dmx_port_t port, RdmDevice* devices,
                      int& count, const char* portName) {
   Serial.printf("\n[RDM] Discovery on %s...\n", portName);
+
   rdm_uid_t foundUids[RDM_MAX_DEVICES];
-  int found = rdm_discover_devices_simple(port, foundUids, RDM_MAX_DEVICES);
+  int found = (int)rdm_discover_devices_simple(port, foundUids, RDM_MAX_DEVICES);
   Serial.printf("[RDM] %s: %d device(s)\n", portName, found);
 
   for (int i = 0; i < count; i++) devices[i].active = false;
@@ -458,11 +455,14 @@ void rdmDiscoverPort(dmx_port_t port, RdmDevice* devices,
       if (memcmp(&devices[j].uid, &foundUids[i], sizeof(rdm_uid_t)) == 0) {
         devices[j].active = true;
         isNew = false;
+        // Re-read DMX address in case it changed
         rdm_ack_t ack;
         uint16_t newAddr = 0;
-        if (rdm_send_get_dmx_start_address(port, &foundUids[i], RDM_SUB_DEVICE_ROOT, &newAddr, &ack)) {
+        if (rdm_send_get_dmx_start_address(port, &foundUids[i],
+                                           RDM_SUB_DEVICE_ROOT, &newAddr, &ack) > 0) {
           if (newAddr != devices[j].dmxAddress) {
-            Serial.printf("[RDM] %s Dev%d: addr %d→%d\n", portName, j, devices[j].dmxAddress, newAddr);
+            Serial.printf("[RDM] %s Dev%d: addr %d→%d\n",
+                          portName, j, devices[j].dmxAddress, newAddr);
             devices[j].dmxAddress = newAddr;
           }
         }
@@ -479,6 +479,7 @@ void rdmDiscoverPort(dmx_port_t port, RdmDevice* devices,
       count++;
     }
   }
+
   for (int i = 0; i < count; i++) {
     if (!devices[i].active) {
       Serial.printf("[RDM] %s UID " UIDSTR " lost!\n", portName, UID2STR(devices[i].uid));
@@ -487,7 +488,7 @@ void rdmDiscoverPort(dmx_port_t port, RdmDevice* devices,
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  ARTNET CALLBACK
+//  ARTNET CALLBACK – only copy data, never call dmx_send() here
 // ═══════════════════════════════════════════════════════════════
 
 void onArtNetFrame(uint16_t universe, uint16_t numberOfChannels,
@@ -513,16 +514,14 @@ void setup() {
   delay(500);
   Serial.println("\n=== ESP32 ArtNet→DMX (Runtime WiFi Config) ===");
 
-  // BOOT / reset button
 #if RESET_WIFI_PIN >= 0
   pinMode(RESET_WIFI_PIN, INPUT_PULLUP);
 #endif
 
-  // Zero DMX buffers
   memset((void*)dataA, 0, DMX_PACKET_SIZE);
   memset((void*)dataB, 0, DMX_PACKET_SIZE);
 
-  // Build unique device name from MAC
+  // Build unique device name from last 3 bytes of MAC
   uint8_t mac[6];
   WiFi.macAddress(mac);
   snprintf(dynamicName, sizeof(dynamicName),
@@ -533,14 +532,14 @@ void setup() {
   uint8_t storedMode = loadWifiMode();
   bool forcePortal   = (storedMode == 255);  // 255 = never configured
 
-  // Check BOOT button: if held for > 3 s, force Captive Portal
+  // BOOT button long-press (> 3 s) → force captive portal
 #if RESET_WIFI_PIN >= 0
   if (!forcePortal && digitalRead(RESET_WIFI_PIN) == LOW) {
-    Serial.println("[Button] BOOT held – checking for long-press...");
+    Serial.println("[Button] BOOT held – checking long-press...");
     unsigned long held = millis();
     while (digitalRead(RESET_WIFI_PIN) == LOW) {
       if (millis() - held > 3000) {
-        Serial.println("[Button] Long-press detected – resetting WiFi config.");
+        Serial.println("[Button] Long-press → resetting WiFi config.");
         clearWifiConfig();
         forcePortal = true;
         break;
@@ -551,18 +550,16 @@ void setup() {
 #endif
 
   if (forcePortal || storedMode == MODE_CAPTIVE) {
-    // Opens blocking portal; exits only via ESP.restart() after save
-    runCaptivePortal();
-    return; // never reached
+    runCaptivePortal();  // never returns – ESP.restart() inside
+    return;
   }
 
   // ── MODE_STA ─────────────────────────────────────────────────
   if (storedMode == MODE_STA) {
     String ssid = loadStaSsid();
     String pw   = loadStaPassword();
-    WiFi.setHostname(dynamicName);
     if (ssid.length() == 0 || !connectWiFi(ssid, pw)) {
-      Serial.println("[WiFi] Stored credentials failed – launching portal.");
+      Serial.println("[WiFi] Credentials failed – launching portal.");
       clearWifiConfig();
       runCaptivePortal();
       return;
@@ -574,8 +571,8 @@ void setup() {
     WiFi.mode(WIFI_AP);
     WiFi.softAPConfig(AP_IP, AP_IP, AP_SUBNET);
     WiFi.softAP(dynamicName);  // open AP, no password
-    Serial.println("[AP] Started: " + String(dynamicName));
-    Serial.println("[AP] IP: " + WiFi.softAPIP().toString());
+    Serial.println("[AP] SSID: " + String(dynamicName));
+    Serial.println("[AP] IP:   " + WiFi.softAPIP().toString());
   }
 
   // ── mDNS (STA only) ──────────────────────────────────────────
@@ -594,7 +591,7 @@ void setup() {
   artnet.setArtDmxCallback(onArtNetFrame);
   artnet.begin(dynamicName);
 
-  // ── DMX driver (esp_dmx 4.1.0 API) ──────────────────────────
+  // ── DMX driver (esp_dmx 4.1.0) ───────────────────────────────
   dmx_config_t config = DMX_CONFIG_DEFAULT;
   dmx_personality_t personalities[] = { {512, "Full Universe"} };
   const int personality_count = 1;
@@ -613,7 +610,7 @@ void setup() {
   lastRdmDiscovery = millis();
   rdmInitDone = true;
 
-  Serial.println("\n=== System ready ===\n");
+  Serial.println("\n=== System ready ===");
   Serial.println("Tip: Send \"reset-wifi\" via Serial to re-open the config portal.");
 }
 
@@ -623,7 +620,7 @@ void setup() {
 
 void loop() {
 
-  // ── Serial command: "reset-wifi" ─────────────────────────────
+  // ── Serial commands ──────────────────────────────────────────
   if (Serial.available()) {
     String cmd = Serial.readStringUntil('\n');
     cmd.trim();
@@ -680,8 +677,7 @@ void loop() {
   }
 
   // ── Periodic RDM discovery ───────────────────────────────────
-  if (rdmInitDone &&
-      millis() - lastRdmDiscovery > RDM_DISCOVERY_INTERVAL) {
+  if (rdmInitDone && millis() - lastRdmDiscovery > RDM_DISCOVERY_INTERVAL) {
     lastRdmDiscovery = millis();
     rdmDiscoverPort(dmxPortA, rdmDevicesA, rdmCountA, "Port A");
     rdmDiscoverPort(dmxPortB, rdmDevicesB, rdmCountB, "Port B");
@@ -718,19 +714,19 @@ bool identifyDeviceB(int idx, bool enable) {
 
 void printRdmDeviceList() {
   Serial.println("\n── RDM Device List ──────────────────────────");
-  Serial.printf("Port A: %d\n", rdmCountA);
+  Serial.printf("Port A: %d device(s)\n", rdmCountA);
   for (int i = 0; i < rdmCountA; i++) {
-    Serial.printf("  [%d] UID:" UIDSTR " | Addr:%d | %s | SW:%s | %s\n",
+    Serial.printf("  [%d] UID:" UIDSTR " | Addr:%d | SW:%s | %s\n",
                   i, UID2STR(rdmDevicesA[i].uid),
-                  rdmDevicesA[i].dmxAddress, rdmDevicesA[i].label,
+                  rdmDevicesA[i].dmxAddress,
                   rdmDevicesA[i].swVersion,
                   rdmDevicesA[i].active ? "ACTIVE" : "OFFLINE");
   }
-  Serial.printf("Port B: %d\n", rdmCountB);
+  Serial.printf("Port B: %d device(s)\n", rdmCountB);
   for (int i = 0; i < rdmCountB; i++) {
-    Serial.printf("  [%d] UID:" UIDSTR " | Addr:%d | %s | SW:%s | %s\n",
+    Serial.printf("  [%d] UID:" UIDSTR " | Addr:%d | SW:%s | %s\n",
                   i, UID2STR(rdmDevicesB[i].uid),
-                  rdmDevicesB[i].dmxAddress, rdmDevicesB[i].label,
+                  rdmDevicesB[i].dmxAddress,
                   rdmDevicesB[i].swVersion,
                   rdmDevicesB[i].active ? "ACTIVE" : "OFFLINE");
   }
