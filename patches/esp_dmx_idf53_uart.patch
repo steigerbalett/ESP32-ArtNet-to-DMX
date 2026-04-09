@@ -1,13 +1,13 @@
 --- a/src/dmx/hal/uart.c
 +++ b/src/dmx/hal/uart.c
-@@ -327,6 +327,18 @@
+@@ -327,6 +327,19 @@
  bool dmx_uart_init(dmx_port_t dmx_num, void *isr_context, int isr_flags) {
    struct dmx_uart_t *uart = &dmx_uart_context[dmx_num];
- 
+
 +#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 3, 0)
 +  // IDF 5.3+: uart_signal_conn_t has no .module field.
-+  // uart_ll_enable_bus_clock / uart_ll_reset_register are macros that require
-+  // __DECLARE_RCC_ATOMIC_ENV, which is provided by PERIPH_RCC_ATOMIC().
++  // uart_ll_enable_bus_clock/reset_register are macros that require
++  // __DECLARE_RCC_ATOMIC_ENV, provided by PERIPH_RCC_ATOMIC().
 +  PERIPH_RCC_ATOMIC() {
 +    uart_ll_enable_bus_clock(dmx_num, true);
 +  }
@@ -20,18 +20,20 @@
    periph_module_enable(uart_periph_signal[dmx_num].module);
    if (dmx_num != 0) {  // Default UART port for console
  #if SOC_UART_REQUIRE_CORE_RESET
-@@ -338,6 +350,7 @@
+@@ -338,6 +351,7 @@
      periph_module_reset(uart_periph_signal[dmx_num].module);
  #endif
    }
 +#endif  // ESP_IDF_VERSION >= 5.3.0
  #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
- ...
-@@ -381,7 +395,13 @@
+   uint32_t sclk_freq;
+ #if CONFIG_IDF_TARGET_ESP32C6
+@@ -381,7 +395,14 @@
  void dmx_uart_deinit(dmx_port_t dmx_num) {
    struct dmx_uart_t *uart = &dmx_uart_context[dmx_num];
    if (uart->num != 0) {  // Default UART port for console
 +#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 3, 0)
++    // IDF 5.3+: no .module field; PERIPH_RCC_ATOMIC() required
 +    PERIPH_RCC_ATOMIC() {
 +      uart_ll_enable_bus_clock(uart->num, false);
 +    }
