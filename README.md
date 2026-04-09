@@ -1,12 +1,20 @@
 # ESP32-ArtNet-to-DMX + RDM
 
-Per la versione in italiano clicca [qui](README-ITA.md).
-
 This is a simple ArtNet to DMX converter based on an ESP32 and two MAX485 modules.
+
+Based on the [DMX_write](https://github.com/someweisguy/esp_dmx) sketch by Mitch Weisbord (https://github.com/someweisguy/esp_dmx)
+
+and on [ArtNetWifiNeoPixel](https://github.com/rstephan/ArtnetWifi) sketch by rstephan (https://github.com/rstephan/ArtnetWifi)
+
+Original: 2023 - Emanuele Signoretta (https://github.com/signorettae/ESP32-ArtNet-to-DMX)
 
 This is a brief introduction to the project published on [ElettronicaIN #276](https://futuranet.it/prodotto/n-276-dicembre-2023-gennaio-2024/).
 
-It is based on the sketch [DMX_write](https://github.com/someweisguy/esp_dmx) by Mitch Weisbord and on the sketch [ArtNetWifiNeoPixel](https://github.com/rstephan/ArtnetWifi) by rstephan.
+and on [elektormagazine](https://www.elektormagazine.de/articles/esp32-basierter-artnet-zu-dmx-konverter-aktualisieren-sie-ihr-alteres-dmx-gerat)
+
+Per la versione README in italiano clicca [qui](README-ITA.md).
+
+
 
 # Hardware
 
@@ -65,16 +73,28 @@ It is based on the sketch [DMX_write](https://github.com/someweisguy/esp_dmx) by
 # Software
 
 ## Configuration
+WIFI MODE SELECTION:
 
+  On EVERY first boot (or after reset), the device starts a 
+  password-free Captive Portal AP named "ESP-ArtNet-XXYYZZ". 
+  Connect to it and you will be redirected (or navigate to 
+  http://192.168.4.1) to choose: 
 
-#endif
+    • WIFI_MODE_STA  – Connect to an existing WiFi network. 
+                       Enter SSID + password in the portal. 
 
-WiFiUDP UdpSend;
-ArtnetWifi artnet;
+    • WIFI_MODE_AP   – ESP32 acts as its own Access Point. 
+                       No external router needed. 
+                       ArtNet controllers connect directly. 
+                       Fixed IP: 192.168.4.1 
+
+  The choice is stored in NVS (Preferences). To change it later, 
+  press the BOOT button for > 3 s while the device is running, 
+  or send "reset-wifi\n" via Serial. The device will reboot into 
+  the Captive Portal again. 
 
 
 -------
 
 Feel free to edit the sketch, to improve the functionalities and to send pull requests.
-
 Readme template taken from [here](https://github.com/bremme/arduino-project/blob/master/README.md)
