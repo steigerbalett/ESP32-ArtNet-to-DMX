@@ -1,10 +1,10 @@
-# ESP32-ArtNet-to-DMX
+# ESP32-ArtNet-to-DMX + RDM
 
 Per la versione in italiano clicca [qui](README-ITA.md).
 
 This is a simple ArtNet to DMX converter based on an ESP32 and two MAX485 modules.
 
-This is a brief introduction to my project published on [ElettronicaIN #276](https://futuranet.it/prodotto/n-276-dicembre-2023-gennaio-2024/).
+This is a brief introduction to the project published on [ElettronicaIN #276](https://futuranet.it/prodotto/n-276-dicembre-2023-gennaio-2024/).
 
 It is based on the sketch [DMX_write](https://github.com/someweisguy/esp_dmx) by Mitch Weisbord and on the sketch [ArtNetWifiNeoPixel](https://github.com/rstephan/ArtnetWifi) by rstephan.
 
@@ -44,7 +44,7 @@ It is based on the sketch [DMX_write](https://github.com/someweisguy/esp_dmx) by
 | GND       | GND         |
 | 4         | DE          |
 | 17        | DI          |
-| 4         | RE          |
+| 16        | RE          |
 
 ###### Universe B
 
@@ -54,7 +54,7 @@ It is based on the sketch [DMX_write](https://github.com/someweisguy/esp_dmx) by
 | GND       | GND         |
 | 21        | DE          |
 | 19        | DI          |
-| 21        | RE          |
+| 22        | RE          |
 
 ## Wiring diagram
 
@@ -66,29 +66,12 @@ It is based on the sketch [DMX_write](https://github.com/someweisguy/esp_dmx) by
 
 ## Configuration
 
-```arduino
-//#define DHCP_DISABLED
-
-#ifdef DHCP_DISABLED
-
-IPAddress local_IP(192, 168, 1, 154);
-IPAddress gateway(192, 168, 1, 1);
-IPAddress subnet(255, 255, 255, 0);
-IPAddress primaryDNS(192, 168, 1, 1);  //optional
-IPAddress secondaryDNS(1, 1, 1, 1);    //optional
 
 #endif
 
 WiFiUDP UdpSend;
 ArtnetWifi artnet;
 
-const char* ssid = "MyArtNetNetwork";
-const char* password = "MyArtNetNetwork";
-```
-
-Modify the sketch, by just changing the variables `ssid` and `password`, adapting them to your network. 
-
-You can decide to use DHCP or static IP. To disable DHCP just uncomment the line `#define DHCP_DISABLED` and set the variables `local_IP`, `gateway`, `subnet` and (optionally) `primaryDNS` and `secondaryDNS`.
 
 -------
 
