@@ -54,10 +54,21 @@ jobs:
       - name: Install required libraries
         run: |
           arduino-cli lib install "ArtnetWifi"
-          arduino-cli lib install "WiFiManager"
           arduino-cli config set library.enable_unsafe_install true
           arduino-cli lib install --git-url \
             https://github.com/someweisguy/esp_dmx.git
+
+      # esp_dmx 4.1.0 uses uart_periph_signal[n].module which was removed
+      # from uart_signal_conn_t in ESP-IDF 5.3 (required by Arduino ESP32 Core 3.x).
+      # The patch replaces those three calls with uart_ll_enable_bus_clock() /
+      # uart_ll_reset_register() behind an IDF version guard so the library
+      # still compiles on older IDF versions as well.
+      - name: Patch esp_dmx – IDF 5.3+ uart.c compatibility
+        run: |
+          patch -p1 \
+            --directory="${HOME}/Arduino/libraries/esp_dmx" \
+            --input="${GITHUB_WORKSPACE}/patches/esp_dmx_idf53_uart.patch" \
+            --verbose
 
       - name: Build firmware [${{ matrix.label }}]
         run: |
@@ -68,7 +79,8 @@ jobs:
 
       - name: Rename binary
         run: |
-          BIN=$(find build_output -name "*.bin" | grep -v bootloader | grep -v partitions | head -n1)
+          BIN=$(find build_output -name "*.bin" \
+            | grep -v bootloader | grep -v partitions | head -n1)
           if [ -z "$BIN" ]; then
             echo "ERROR: No firmware binary found in build_output!"
             find build_output -type f
@@ -128,7 +140,7 @@ jobs:
 
             Receives 2 ArtNet universes via WiFi and outputs them as 2 physical DMX universes, with RDM (E1.20) support.
 
-            ### Binaries (ESP32)
+            ### Binaries
             | File | Board |
             |---|---|
             | `ESP32-ArtNet-to-DMX_ESP32.bin` | ESP32 (generic / DevKit) |
@@ -138,18 +150,11 @@ jobs:
             ### Flash via Web GUI
             https://esptool.spacehuhn.com
 
-            * Open the page in Chrome or Edge
-            * Connect the ESP32 via USB
-            * Click Connect and select the COM port
-            * Upload the .bin file, then click Program
-
             ### Flash via esptool CLI
             ```bash
             esptool.py --chip esp32 --baud 921600 \
               write_flash 0x10000 ESP32-ArtNet-to-DMX_ESP32.bin
             ```
-
-            > **Note:** Adjust the SSID/password in the sketch before flashing, or set `WIFI_MODE_CAPTIVE`. Also make sure the DMX pins match your hardware.
 
             ### Recent Changes
             ${{ steps.changelog.outputs.CHANGELOG }}
@@ -207,7 +212,7 @@ jobs:
 
             Receives 2 ArtNet universes via WiFi and outputs them as 2 physical DMX universes, with RDM (E1.20) support.
 
-            ### Binaries (ESP32)
+            ### Binaries
             | File | Board |
             |---|---|
             | `ESP32-ArtNet-to-DMX_ESP32.bin` | ESP32 (generic / DevKit) |
@@ -217,18 +222,11 @@ jobs:
             ### Flash via Web GUI
             https://esptool.spacehuhn.com
 
-            * Open the page in Chrome or Edge
-            * Connect the ESP32 via USB
-            * Click Connect and select the COM port
-            * Upload the .bin file, then click Program
-
             ### Flash via esptool CLI
             ```bash
             esptool.py --chip esp32 --baud 921600 \
               write_flash 0x10000 ESP32-ArtNet-to-DMX_ESP32.bin
             ```
-
-            > **Note:** Adjust the SSID/password in the sketch before flashing, or set `WIFI_MODE_CAPTIVE`. Also make sure the DMX pins match your hardware.
 
             ### Changes
             ${{ steps.changelog.outputs.CHANGELOG }}
