@@ -55,6 +55,7 @@ jobs:
         run: |
           arduino-cli lib install "ArtnetWifi"
           arduino-cli lib install "WiFiManager"
+          arduino-cli config set library.enable_unsafe_install true
           arduino-cli lib install --git-url \
             https://github.com/someweisguy/esp_dmx.git
 
@@ -118,9 +119,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: draft-latest
-          name: "ESP32-ArtNet-to-DMX – Draft (latest commit)"
+          name: "ESP32-ArtNet-to-DMX - Draft (latest commit)"
           body: |
-            ## ESP32-ArtNet-to-DMX – Draft Build
+            ## ESP32-ArtNet-to-DMX - Draft Build
 
             > **This is an automated draft release** built from the latest commit on branch `${{ github.ref_name }}` (`${{ github.sha }}`).
             > It will be replaced on every subsequent commit. Do **not** use this for production.
