@@ -2,6 +2,8 @@ name: Build & Release (ESP32)
 
 on:
   push:
+    branches:
+      - '**'
     tags:
       - 'v*.*.*'
   workflow_dispatch:
@@ -81,6 +83,81 @@ jobs:
           path: ${{ matrix.artifact }}
           retention-days: 7
 
+  draft-release:
+    name: Create Draft Release (on every commit)
+    needs: build
+    runs-on: ubuntu-latest
+    if: "!startsWith(github.ref, 'refs/tags/')"
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets/
+          merge-multiple: true
+
+      - name: List release assets
+        run: ls -lh release-assets/
+
+      - name: Generate short changelog
+        id: changelog
+        run: |
+          LOG=$(git log -10 --pretty=format:"- %s (%h)")
+          echo "CHANGELOG<<EOF" >> $GITHUB_OUTPUT
+          echo "$LOG" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create / update draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: draft-latest
+          name: "ESP32-ArtNet-to-DMX – Draft (latest commit)"
+          body: |
+            ## ESP32-ArtNet-to-DMX – Draft Build
+
+            > **This is an automated draft release** built from the latest commit on branch `${{ github.ref_name }}` (`${{ github.sha }}`).
+            > It will be replaced on every subsequent commit. Do **not** use this for production.
+
+            Receives 2 ArtNet universes via WiFi and outputs them as 2 physical DMX universes, with RDM (E1.20) support.
+
+            ### Binaries (ESP32)
+            | File | Board |
+            |---|---|
+            | `ESP32-ArtNet-to-DMX_ESP32.bin` | ESP32 (generic / DevKit) |
+            | `ESP32-ArtNet-to-DMX_ESP32-S3.bin` | ESP32-S3 |
+            | `ESP32-ArtNet-to-DMX_ESP32-C3.bin` | ESP32-C3 |
+
+            ### Flash via Web GUI
+            https://esptool.spacehuhn.com
+
+            * Open the page in Chrome or Edge
+            * Connect the ESP32 via USB
+            * Click Connect and select the COM port
+            * Upload the .bin file, then click Program
+
+            ### Flash via esptool CLI
+            ```bash
+            esptool.py --chip esp32 --baud 921600 \
+              write_flash 0x10000 ESP32-ArtNet-to-DMX_ESP32.bin
+            ```
+
+            > **Note:** Adjust the SSID/password in the sketch before flashing, or set `WIFI_MODE_CAPTIVE`. Also make sure the DMX pins match your hardware.
+
+            ### Recent Changes
+            ${{ steps.changelog.outputs.CHANGELOG }}
+          files: release-assets/*.bin
+          draft: true
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   release:
     name: Create GitHub Release
     needs: build
@@ -127,32 +204,32 @@ jobs:
           body: |
             ## ESP32-ArtNet-to-DMX ${{ github.ref_name }}
 
-            Empfaengt 2 ArtNet-Universen per WiFi und gibt sie als 2 physikalische DMX-Universen aus, mit RDM (E1.20) Unterstuetzung.
+            Receives 2 ArtNet universes via WiFi and outputs them as 2 physical DMX universes, with RDM (E1.20) support.
 
             ### Binaries (ESP32)
-            | Datei | Board |
+            | File | Board |
             |---|---|
             | `ESP32-ArtNet-to-DMX_ESP32.bin` | ESP32 (generic / DevKit) |
             | `ESP32-ArtNet-to-DMX_ESP32-S3.bin` | ESP32-S3 |
             | `ESP32-ArtNet-to-DMX_ESP32-C3.bin` | ESP32-C3 |
 
-            ### Flash per Web-GUI
+            ### Flash via Web GUI
             https://esptool.spacehuhn.com
 
-            * Oeffne die Seite in Chrome oder Edge
-            * ESP32 per USB anschliessen
-            * Connect klicken, COM-Port auswaehlen
-            * .bin-Datei hochladen, dann Program klicken
+            * Open the page in Chrome or Edge
+            * Connect the ESP32 via USB
+            * Click Connect and select the COM port
+            * Upload the .bin file, then click Program
 
-            ### Flash per esptool CLI
+            ### Flash via esptool CLI
             ```bash
             esptool.py --chip esp32 --baud 921600 \
               write_flash 0x10000 ESP32-ArtNet-to-DMX_ESP32.bin
             ```
 
-            Hinweis: Vor dem Flashen ssid/password im Sketch anpassen oder WIFI_MODE_CAPTIVE setzen, sowie die DMX-Pins auf die eigene Hardware abstimmen.
+            > **Note:** Adjust the SSID/password in the sketch before flashing, or set `WIFI_MODE_CAPTIVE`. Also make sure the DMX pins match your hardware.
 
-            ### Aenderungen
+            ### Changes
             ${{ steps.changelog.outputs.CHANGELOG }}
           files: release-assets/*.bin
           draft: false
